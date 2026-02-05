@@ -1,4 +1,4 @@
-// Create connection to Node.js Server
+
 const socket = io();
 
 let canvas;

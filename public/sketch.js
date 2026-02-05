@@ -1,10 +1,4 @@
-// ===============================
-// GYRO SNAKE, iOS permission style like Becky demo
-// ===============================
-
-// global
 let askButton;
-let permissionMsg = "permission: not requested";
 
 // Device motion
 let accX = 0, accY = 0, accZ = 0;
@@ -47,28 +41,40 @@ function setup() {
   isMobileDevice = checkMobileDevice();
   resetGame();
 
-  // Becky style: if either requestPermission exists, show a button
-  const needsPermission =
+  // ✅ iOS permission handling (robust)
+  const needsIOSPermission =
     typeof DeviceMotionEvent?.requestPermission === "function" ||
     typeof DeviceOrientationEvent?.requestPermission === "function";
 
-  if (needsPermission) {
-    askButton = createButton("Permission");
-    askButton.position(16, 16);
+  if (needsIOSPermission) {
+    askButton = createButton("Enable Motion Sensors");
 
-    // make sure it is clickable over canvas
+    // Big centered button
+    askButton.size(280, 90);
+    askButton.position(windowWidth / 2 - 140, windowHeight / 2 - 45);
     askButton.style("position", "fixed");
     askButton.style("z-index", "9999");
-    askButton.style("padding", "12px 16px");
-    askButton.style("font-size", "16px");
+    askButton.style("font-size", "18px");
+    askButton.style("border-radius", "16px");
+    askButton.style("border", "2px solid #222");
+    askButton.style("background", "#fff");
+    askButton.style("pointer-events", "auto");
 
+    askButton.id("permission-button");
+
+    // p5 handlers
     askButton.mousePressed(handlePermissionButtonPressed);
+    askButton.touchStarted(handlePermissionButtonPressed);
+
+    // native handlers (more reliable in some iOS shells)
+    askButton.elt.addEventListener("click", handlePermissionButtonPressed, { passive: false });
+    askButton.elt.addEventListener("touchend", handlePermissionButtonPressed, { passive: false });
+
   } else {
-    // devices that don't require permission
+    // Android / non-permission devices
     window.addEventListener("devicemotion", deviceMotionHandler, true);
     window.addEventListener("deviceorientation", deviceOrientationHandler, true);
     hasPermission = true;
-    permissionMsg = "permission: not needed";
   }
 }
 
@@ -81,14 +87,16 @@ function draw() {
     fill(0);
     textAlign(LEFT, TOP);
     textSize(14);
-    text("Desktop: use arrow keys. Mobile: tilt phone to play.", 16, 94);
+    text("Desktop: use arrow keys. Mobile: tilt phone to play.", 16, 70);
   }
 
   if (!hasPermission && isMobileDevice) {
     fill(0);
     textAlign(LEFT, TOP);
     textSize(14);
-    text("Tap 'Permission' to enable motion and orientation.", 16, 94);
+    text("Tap the BIG button to allow motion sensors (iOS permission).", 16, 70);
+    textSize(12);
+    text("Tip: On iPhone, open this page in Safari (not WeChat/embedded browser).", 16, 92);
   }
 
   if (gameOver) {
@@ -108,49 +116,65 @@ function draw() {
   drawSnake();
 }
 
-// ------------------- PERMISSION, Becky style -------------------
+// -------------------- PERMISSION --------------------
+async function handlePermissionButtonPressed(e) {
+  // prevent iOS treating it as scroll gesture
+  if (e) {
+    e.preventDefault?.();
+    e.stopPropagation?.();
+  }
 
-async function handlePermissionButtonPressed() {
+  // quick confirm: if you see this, click is firing
+  alert("Clicked! Requesting iOS motion permission...");
+
   try {
-    permissionMsg = "permission: requesting...";
+    let motionGranted = false;
+    let orientGranted = false;
 
-    // Request Motion permission if available
+    // Motion permission
     if (typeof DeviceMotionEvent?.requestPermission === "function") {
-      const res = await DeviceMotionEvent.requestPermission();
-      permissionMsg = "motion: " + res;
-      if (res === "granted") {
+      const r1 = await DeviceMotionEvent.requestPermission();
+      console.log("Motion permission:", r1);
+      motionGranted = (r1 === "granted");
+      if (motionGranted) {
         window.addEventListener("devicemotion", deviceMotionHandler, true);
       }
     } else {
-      // no requestPermission API, just add listener
       window.addEventListener("devicemotion", deviceMotionHandler, true);
-      permissionMsg = "motion: listener added";
+      motionGranted = true;
     }
 
-    // Request Orientation permission if available
+    // Orientation permission
     if (typeof DeviceOrientationEvent?.requestPermission === "function") {
-      const res2 = await DeviceOrientationEvent.requestPermission();
-      permissionMsg += " | orientation: " + res2;
-      if (res2 === "granted") {
+      const r2 = await DeviceOrientationEvent.requestPermission();
+      console.log("Orientation permission:", r2);
+      orientGranted = (r2 === "granted");
+      if (orientGranted) {
         window.addEventListener("deviceorientation", deviceOrientationHandler, true);
       }
-      if (res2 === "granted") hasPermission = true;
     } else {
       window.addEventListener("deviceorientation", deviceOrientationHandler, true);
-      permissionMsg += " | orientation: listener added";
-      hasPermission = true;
+      orientGranted = true;
     }
 
-    // Only remove the button if we actually enabled control
-    if (hasPermission) askButton?.remove();
-  } catch (e) {
-    console.error(e);
-    permissionMsg = "permission error: " + (e?.message || e);
+    hasPermission = motionGranted || orientGranted;
+
+    if (hasPermission) {
+      if (askButton) {
+        askButton.html("Sensors Enabled ✅");
+        askButton.attribute("disabled", "");
+        setTimeout(() => askButton?.remove(), 600);
+      }
+    } else {
+      if (askButton) askButton.html("Denied — open in Safari");
+    }
+  } catch (err) {
+    console.error(err);
+    if (askButton) askButton.html("Error — open in Safari/HTTPS");
   }
 }
 
-// ------------------- SENSOR HANDLERS -------------------
-
+// -------------------- SENSOR HANDLERS --------------------
 function deviceMotionHandler(event) {
   if (!event.acceleration || !event.rotationRate) return;
 
@@ -169,8 +193,7 @@ function deviceOrientationHandler(event) {
   leftToRight = event.gamma || 0;
 }
 
-// ------------------- GAME -------------------
-
+// -------------------- GAME LOGIC --------------------
 function resetGame() {
   cols = max(10, floor(width / cell));
   rows = max(10, floor(height / cell));
@@ -277,25 +300,108 @@ function updateDirFromTilt() {
   lastDirChangeMs = now;
 }
 
-// ------------------- DRAW -------------------
-
+// -------------------- DRAW: DACHSHUND SNAKE (粒粒腊肠狗) --------------------
 function drawSnake() {
   noStroke();
-  for (let i = 0; i < snake.length; i++) {
+
+  const heading =
+    dir.x === 1 ? "R" :
+    dir.x === -1 ? "L" :
+    dir.y === 1 ? "D" : "U";
+
+  const bodyCol = color(168, 108, 60);
+  const darkCol = color(110, 70, 40);
+  const earCol  = color(90, 55, 30);
+  const faceCol = color(200, 150, 95);
+  const noseCol = color(30);
+  const eyeCol  = color(0);
+
+  for (let i = snake.length - 1; i >= 0; i--) {
     const s = snake[i];
-    fill(i === 0 ? 30 : 80);
-    rect(s.x * cell, s.y * cell, cell, cell);
+    const x0 = s.x * cell;
+    const y0 = s.y * cell;
+
+    fill(bodyCol);
+    rect(x0 + 2, y0 + 2, cell - 4, cell - 4, 4);
+
+    fill(darkCol);
+    rect(x0 + 3, y0 + 3, cell - 6, max(3, floor((cell - 6) * 0.25)), 3);
+
+    if (i === snake.length - 1) {
+      let tdx = 0, tdy = 0;
+      if (snake.length > 1) {
+        const prev = snake[i - 1];
+        tdx = s.x - prev.x;
+        tdy = s.y - prev.y;
+      } else {
+        tdx = -dir.x; tdy = -dir.y;
+      }
+
+      fill(darkCol);
+      if (tdx === 1) rect(x0 + cell - 4, y0 + cell / 2 - 2, 3, 4, 2);
+      else if (tdx === -1) rect(x0 + 1, y0 + cell / 2 - 2, 3, 4, 2);
+      else if (tdy === 1) rect(x0 + cell / 2 - 2, y0 + cell - 4, 4, 3, 2);
+      else if (tdy === -1) rect(x0 + cell / 2 - 2, y0 + 1, 4, 3, 2);
+      continue;
+    }
+
+    if (i === 0) {
+      fill(bodyCol);
+      rect(x0 + 1, y0 + 1, cell - 2, cell - 2, 6);
+
+      if (heading === "R") {
+        fill(faceCol); rect(x0 + cell - 8, y0 + cell / 2 - 4, 7, 8, 3);
+        fill(noseCol); rect(x0 + cell - 3, y0 + cell / 2 - 1, 2, 2);
+        fill(eyeCol);  rect(x0 + cell - 12, y0 + cell / 2 - 3, 2, 2);
+        fill(earCol);  rect(x0 + cell - 14, y0 + 3, 4, 6, 2);
+      } else if (heading === "L") {
+        fill(faceCol); rect(x0 + 1, y0 + cell / 2 - 4, 7, 8, 3);
+        fill(noseCol); rect(x0 + 1, y0 + cell / 2 - 1, 2, 2);
+        fill(eyeCol);  rect(x0 + 10, y0 + cell / 2 - 3, 2, 2);
+        fill(earCol);  rect(x0 + 10, y0 + 3, 4, 6, 2);
+      } else if (heading === "D") {
+        fill(faceCol); rect(x0 + cell / 2 - 4, y0 + cell - 8, 8, 7, 3);
+        fill(noseCol); rect(x0 + cell / 2 - 1, y0 + cell - 3, 2, 2);
+        fill(eyeCol);  rect(x0 + cell / 2 - 3, y0 + cell - 12, 2, 2);
+        fill(earCol);  rect(x0 + 3, y0 + cell - 14, 6, 4, 2);
+      } else {
+        fill(faceCol); rect(x0 + cell / 2 - 4, y0 + 1, 8, 7, 3);
+        fill(noseCol); rect(x0 + cell / 2 - 1, y0 + 1, 2, 2);
+        fill(eyeCol);  rect(x0 + cell / 2 - 3, y0 + 10, 2, 2);
+        fill(earCol);  rect(x0 + 3, y0 + 10, 6, 4, 2);
+      }
+      continue;
+    }
+
+    if (i % 2 === 0) {
+      fill(darkCol);
+      rect(x0 + 4, y0 + cell - 4, 4, 3, 2);
+      rect(x0 + cell - 8, y0 + cell - 4, 4, 3, 2);
+    }
   }
 }
 
+// -------------------- DRAW: KIBBLE --------------------
 function drawFruit() {
   noStroke();
-  fill(220, 60, 60);
-  const x = fruit.x * cell + cell / 2;
-  const y = fruit.y * cell + cell / 2;
-  ellipse(x, y, cell * 0.75, cell * 0.75);
+
+  const kibbleCol = color(120, 75, 40);
+  const highlight = color(155, 105, 65);
+
+  const cx = fruit.x * cell + cell / 2;
+  const cy = fruit.y * cell + cell / 2;
+
+  fill(kibbleCol);
+  ellipse(cx, cy, cell * 0.6, cell * 0.5);
+
+  fill(highlight);
+  ellipse(cx - cell * 0.12, cy - cell * 0.1, cell * 0.18, cell * 0.14);
+
+  fill(kibbleCol);
+  rect(cx + cell * 0.15, cy + cell * 0.05, max(2, cell * 0.08), max(2, cell * 0.08), 1);
 }
 
+// -------------------- HUD / GAME OVER --------------------
 function drawHUD() {
   fill(0);
   textAlign(LEFT, TOP);
@@ -304,26 +410,26 @@ function drawHUD() {
 
   textSize(12);
   text(`beta: ${frontToBack.toFixed(1)}  gamma: ${leftToRight.toFixed(1)}`, 16, 38);
-
   text(hasPermission ? "Sensors ON" : "Sensors OFF", 16, 54);
 
-  // show permission response like Becky demo
-  text(permissionMsg, 16, 70, width - 32, 60);
+  if (!isMobileDevice) text("Arrow keys to steer (desktop fallback).", 16, 88);
 }
 
 function drawGameOver() {
   fill(0, 160);
   rect(0, 0, width, height);
+
   fill(255);
   textAlign(CENTER, CENTER);
   textSize(26);
   text("GAME OVER", width / 2, height / 2 - 20);
+
   textSize(14);
   text(`Score: ${score}`, width / 2, height / 2 + 10);
   text("Tap to restart", width / 2, height / 2 + 34);
 }
 
-// restart
+// -------------------- INPUT / RESIZE --------------------
 function touchStarted() {
   if (gameOver) resetGame();
   return false;
@@ -332,7 +438,6 @@ function mousePressed() {
   if (gameOver) resetGame();
 }
 
-// Desktop fallback
 function keyPressed() {
   if (keyCode === LEFT_ARROW) pendingDir = { x: -1, y: 0 };
   if (keyCode === RIGHT_ARROW) pendingDir = { x: 1, y: 0 };
@@ -343,8 +448,12 @@ function keyPressed() {
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   resetGame();
+  if (askButton && !hasPermission) {
+    askButton.position(windowWidth / 2 - 140, windowHeight / 2 - 45);
+  }
 }
 
+// -------------------- UTILS --------------------
 function checkMobileDevice() {
   const ua = navigator.userAgent || "";
   return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);

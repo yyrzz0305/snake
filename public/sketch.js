@@ -35,7 +35,7 @@ function setup() {
 
   resetGame();
 
-  // ---- SENSOR PART (kept in YOUR style) ----
+  // SENSOR PART
   if (
     typeof DeviceMotionEvent.requestPermission === "function" &&
     typeof DeviceOrientationEvent.requestPermission === "function"

@@ -1,4 +1,10 @@
+// ===============================
+// GYRO SNAKE, iOS permission style like Becky demo
+// ===============================
+
+// global
 let askButton;
+let permissionMsg = "permission: not requested";
 
 // Device motion
 let accX = 0, accY = 0, accZ = 0;
@@ -41,36 +47,28 @@ function setup() {
   isMobileDevice = checkMobileDevice();
   resetGame();
 
-  // ✅ SENSOR PART (iOS fix)
-  // 用 ||：只要其中一个需要 permission，就显示按钮
-  const needsIOSPermission =
+  // Becky style: if either requestPermission exists, show a button
+  const needsPermission =
     typeof DeviceMotionEvent?.requestPermission === "function" ||
     typeof DeviceOrientationEvent?.requestPermission === "function";
 
-  if (needsIOSPermission) {
-    askButton = createButton("Enable Motion Sensors");
+  if (needsPermission) {
+    askButton = createButton("Permission");
+    askButton.position(16, 16);
 
-    // ✅ 按钮放中间 + 变大 + 确保在最上层可点
-    askButton.size(280, 90);
-    askButton.position(windowWidth / 2 - 140, windowHeight / 2 - 45);
+    // make sure it is clickable over canvas
     askButton.style("position", "fixed");
     askButton.style("z-index", "9999");
-    askButton.style("font-size", "18px");
-    askButton.style("border-radius", "16px");
-    askButton.style("border", "2px solid #222");
-    askButton.style("background", "#fff");
-    askButton.style("pointer-events", "auto");
+    askButton.style("padding", "12px 16px");
+    askButton.style("font-size", "16px");
 
-    askButton.id("permission-button");
-
-    // ✅ iOS 更稳：mouse + touch 都绑
     askButton.mousePressed(handlePermissionButtonPressed);
-    askButton.touchStarted(handlePermissionButtonPressed);
   } else {
-    // Android / non-permission devices
+    // devices that don't require permission
     window.addEventListener("devicemotion", deviceMotionHandler, true);
     window.addEventListener("deviceorientation", deviceOrientationHandler, true);
     hasPermission = true;
+    permissionMsg = "permission: not needed";
   }
 }
 
@@ -83,14 +81,14 @@ function draw() {
     fill(0);
     textAlign(LEFT, TOP);
     textSize(14);
-    text("Desktop: use arrow keys. Mobile: tilt phone to play.", 16, 70);
+    text("Desktop: use arrow keys. Mobile: tilt phone to play.", 16, 94);
   }
 
   if (!hasPermission && isMobileDevice) {
     fill(0);
     textAlign(LEFT, TOP);
     textSize(14);
-    text("Tap the BIG button to allow motion sensors (iOS needs permission).", 16, 70);
+    text("Tap 'Permission' to enable motion and orientation.", 16, 94);
   }
 
   if (gameOver) {
@@ -110,7 +108,68 @@ function draw() {
   drawSnake();
 }
 
-// GAME
+// ------------------- PERMISSION, Becky style -------------------
+
+async function handlePermissionButtonPressed() {
+  try {
+    permissionMsg = "permission: requesting...";
+
+    // Request Motion permission if available
+    if (typeof DeviceMotionEvent?.requestPermission === "function") {
+      const res = await DeviceMotionEvent.requestPermission();
+      permissionMsg = "motion: " + res;
+      if (res === "granted") {
+        window.addEventListener("devicemotion", deviceMotionHandler, true);
+      }
+    } else {
+      // no requestPermission API, just add listener
+      window.addEventListener("devicemotion", deviceMotionHandler, true);
+      permissionMsg = "motion: listener added";
+    }
+
+    // Request Orientation permission if available
+    if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+      const res2 = await DeviceOrientationEvent.requestPermission();
+      permissionMsg += " | orientation: " + res2;
+      if (res2 === "granted") {
+        window.addEventListener("deviceorientation", deviceOrientationHandler, true);
+      }
+      if (res2 === "granted") hasPermission = true;
+    } else {
+      window.addEventListener("deviceorientation", deviceOrientationHandler, true);
+      permissionMsg += " | orientation: listener added";
+      hasPermission = true;
+    }
+
+    // Only remove the button if we actually enabled control
+    if (hasPermission) askButton?.remove();
+  } catch (e) {
+    console.error(e);
+    permissionMsg = "permission error: " + (e?.message || e);
+  }
+}
+
+// ------------------- SENSOR HANDLERS -------------------
+
+function deviceMotionHandler(event) {
+  if (!event.acceleration || !event.rotationRate) return;
+
+  accX = event.acceleration.x || 0;
+  accY = event.acceleration.y || 0;
+  accZ = event.acceleration.z || 0;
+
+  rrateZ = event.rotationRate.alpha || 0;
+  rrateX = event.rotationRate.beta || 0;
+  rrateY = event.rotationRate.gamma || 0;
+}
+
+function deviceOrientationHandler(event) {
+  rotateDegrees = event.alpha || 0;
+  frontToBack = event.beta || 0;
+  leftToRight = event.gamma || 0;
+}
+
+// ------------------- GAME -------------------
 
 function resetGame() {
   cols = max(10, floor(width / cell));
@@ -182,7 +241,6 @@ function setDirSafely(nx, ny) {
   dir.y = ny;
 }
 
-// Basic portrait/landscape compensation so it feels consistent
 function getScreenAngle() {
   const a = (screen.orientation && typeof screen.orientation.angle === "number")
     ? screen.orientation.angle
@@ -194,8 +252,8 @@ function updateDirFromTilt() {
   const now = millis();
   if (now - lastDirChangeMs < DIR_COOLDOWN_MS) return;
 
-  let b = frontToBack;  // beta
-  let g = leftToRight;  // gamma
+  let b = frontToBack;
+  let g = leftToRight;
 
   const angle = getScreenAngle();
   if (angle === 90 || angle === -270) {
@@ -219,114 +277,23 @@ function updateDirFromTilt() {
   lastDirChangeMs = now;
 }
 
-//  DRAW (你的腊肠狗“一粒一粒”保持不动)
+// ------------------- DRAW -------------------
+
 function drawSnake() {
   noStroke();
-
-  function pxCell(x, y, s, col) {
-    fill(col);
-    rect(x, y, s, s);
-  }
-
-  const heading =
-    dir.x === 1 ? "R" :
-    dir.x === -1 ? "L" :
-    dir.y === 1 ? "D" : "U";
-
-  const bodyCol = color(168, 108, 60);
-  const darkCol = color(110, 70, 40);
-  const earCol  = color(90, 55, 30);
-  const faceCol = color(200, 150, 95);
-  const noseCol = color(30);
-  const eyeCol  = color(0);
-
-  for (let i = snake.length - 1; i >= 0; i--) {
+  for (let i = 0; i < snake.length; i++) {
     const s = snake[i];
-    const x0 = s.x * cell;
-    const y0 = s.y * cell;
-
-    const p = max(3, floor(cell / 6));
-    const pad = floor((cell - p * 5) / 2);
-    const ox = x0 + pad;
-    const oy = y0 + pad;
-
-    fill(bodyCol);
-    rect(x0 + 2, y0 + 2, cell - 4, cell - 4, 4);
-
-    fill(darkCol);
-    rect(x0 + 3, y0 + 3, cell - 6, max(3, floor((cell - 6) * 0.25)), 3);
-
-    if (i === snake.length - 1) {
-      let tdx = 0, tdy = 0;
-      if (snake.length > 1) {
-        const prev = snake[i - 1];
-        tdx = s.x - prev.x;
-        tdy = s.y - prev.y;
-      } else {
-        tdx = -dir.x; tdy = -dir.y;
-      }
-
-      fill(darkCol);
-      if (tdx === 1) rect(x0 + cell - 4, y0 + cell / 2 - 2, 3, 4, 2);
-      else if (tdx === -1) rect(x0 + 1, y0 + cell / 2 - 2, 3, 4, 2);
-      else if (tdy === 1) rect(x0 + cell / 2 - 2, y0 + cell - 4, 4, 3, 2);
-      else if (tdy === -1) rect(x0 + cell / 2 - 2, y0 + 1, 4, 3, 2);
-      continue;
-    }
-
-    if (i === 0) {
-      fill(bodyCol);
-      rect(x0 + 1, y0 + 1, cell - 2, cell - 2, 6);
-
-      if (heading === "R") {
-        fill(faceCol); rect(x0 + cell - 8, y0 + cell / 2 - 4, 7, 8, 3);
-        fill(noseCol); rect(x0 + cell - 3, y0 + cell / 2 - 1, 2, 2);
-        fill(eyeCol);  rect(x0 + cell - 12, y0 + cell / 2 - 3, 2, 2);
-        fill(earCol);  rect(x0 + cell - 14, y0 + 3, 4, 6, 2);
-      } else if (heading === "L") {
-        fill(faceCol); rect(x0 + 1, y0 + cell / 2 - 4, 7, 8, 3);
-        fill(noseCol); rect(x0 + 1, y0 + cell / 2 - 1, 2, 2);
-        fill(eyeCol);  rect(x0 + 10, y0 + cell / 2 - 3, 2, 2);
-        fill(earCol);  rect(x0 + 10, y0 + 3, 4, 6, 2);
-      } else if (heading === "D") {
-        fill(faceCol); rect(x0 + cell / 2 - 4, y0 + cell - 8, 8, 7, 3);
-        fill(noseCol); rect(x0 + cell / 2 - 1, y0 + cell - 3, 2, 2);
-        fill(eyeCol);  rect(x0 + cell / 2 - 3, y0 + cell - 12, 2, 2);
-        fill(earCol);  rect(x0 + 3, y0 + cell - 14, 6, 4, 2);
-      } else {
-        fill(faceCol); rect(x0 + cell / 2 - 4, y0 + 1, 8, 7, 3);
-        fill(noseCol); rect(x0 + cell / 2 - 1, y0 + 1, 2, 2);
-        fill(eyeCol);  rect(x0 + cell / 2 - 3, y0 + 10, 2, 2);
-        fill(earCol);  rect(x0 + 3, y0 + 10, 6, 4, 2);
-      }
-      continue;
-    }
-
-    if (i % 2 === 0) {
-      fill(darkCol);
-      rect(x0 + 4, y0 + cell - 4, 4, 3, 2);
-      rect(x0 + cell - 8, y0 + cell - 4, 4, 3, 2);
-    }
+    fill(i === 0 ? 30 : 80);
+    rect(s.x * cell, s.y * cell, cell, cell);
   }
 }
 
 function drawFruit() {
   noStroke();
-
-  const kibbleCol = color(120, 75, 40);
-  const highlight = color(155, 105, 65);
-
-  const cx = fruit.x * cell + cell / 2;
-  const cy = fruit.y * cell + cell / 2;
-
-  fill(kibbleCol);
-  ellipse(cx, cy, cell * 0.6, cell * 0.5);
-
-  fill(highlight);
-  ellipse(cx - cell * 0.12, cy - cell * 0.1, cell * 0.18, cell * 0.14);
-
-  fill(kibbleCol);
-  rect(cx + cell * 0.15, cy + cell * 0.05, max(2, cell * 0.08), max(2, cell * 0.08), 1);
+  fill(220, 60, 60);
+  const x = fruit.x * cell + cell / 2;
+  const y = fruit.y * cell + cell / 2;
+  ellipse(x, y, cell * 0.75, cell * 0.75);
 }
 
 function drawHUD() {
@@ -337,27 +304,26 @@ function drawHUD() {
 
   textSize(12);
   text(`beta: ${frontToBack.toFixed(1)}  gamma: ${leftToRight.toFixed(1)}`, 16, 38);
+
   text(hasPermission ? "Sensors ON" : "Sensors OFF", 16, 54);
 
-  if (!isMobileDevice) {
-    text("Arrow keys to steer (desktop fallback).", 16, 88);
-  }
+  // show permission response like Becky demo
+  text(permissionMsg, 16, 70, width - 32, 60);
 }
 
 function drawGameOver() {
   fill(0, 160);
   rect(0, 0, width, height);
-
   fill(255);
   textAlign(CENTER, CENTER);
   textSize(26);
   text("GAME OVER", width / 2, height / 2 - 20);
-
   textSize(14);
   text(`Score: ${score}`, width / 2, height / 2 + 10);
   text("Tap to restart", width / 2, height / 2 + 34);
 }
 
+// restart
 function touchStarted() {
   if (gameOver) resetGame();
   return false;
@@ -366,6 +332,7 @@ function mousePressed() {
   if (gameOver) resetGame();
 }
 
+// Desktop fallback
 function keyPressed() {
   if (keyCode === LEFT_ARROW) pendingDir = { x: -1, y: 0 };
   if (keyCode === RIGHT_ARROW) pendingDir = { x: 1, y: 0 };
@@ -376,63 +343,6 @@ function keyPressed() {
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   resetGame();
-
-  // keep button centered
-  if (askButton && !hasPermission) {
-    askButton.position(windowWidth / 2 - 140, windowHeight / 2 - 45);
-  }
-}
-
-// SENSOR CODE (✅ safe: only request if function exists)
-function handlePermissionButtonPressed() {
-  const motionPromise =
-    (typeof DeviceMotionEvent?.requestPermission === "function")
-      ? DeviceMotionEvent.requestPermission()
-      : Promise.resolve("granted");
-
-  motionPromise
-    .then((response) => {
-      if (response === "granted") {
-        window.addEventListener("devicemotion", deviceMotionHandler, true);
-      }
-    })
-    .catch(console.error)
-    .finally(() => {
-      const orientPromise =
-        (typeof DeviceOrientationEvent?.requestPermission === "function")
-          ? DeviceOrientationEvent.requestPermission()
-          : Promise.resolve("granted");
-
-      orientPromise
-        .then((response) => {
-          if (response === "granted") {
-            window.addEventListener("deviceorientation", deviceOrientationHandler, true);
-          }
-        })
-        .catch(console.error)
-        .finally(() => {
-          hasPermission = true;
-          askButton?.remove();
-        });
-    });
-}
-
-function deviceMotionHandler(event) {
-  if (!event.acceleration || !event.rotationRate) return;
-
-  accX = event.acceleration.x || 0;
-  accY = event.acceleration.y || 0;
-  accZ = event.acceleration.z || 0;
-
-  rrateZ = event.rotationRate.alpha || 0;
-  rrateX = event.rotationRate.beta || 0;
-  rrateY = event.rotationRate.gamma || 0;
-}
-
-function deviceOrientationHandler(event) {
-  rotateDegrees = event.alpha || 0;
-  frontToBack = event.beta || 0;
-  leftToRight = event.gamma || 0;
 }
 
 function checkMobileDevice() {

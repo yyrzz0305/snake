@@ -266,7 +266,7 @@ function windowResized() {
   resetGame(); // recalc grid based on new size
 }
 
-// ------------------- YOUR SENSOR CODE (UNCHANGED STYLE) -------------------
+//sensor
 
 function handlePermissionButtonPressed() {
   DeviceMotionEvent.requestPermission()

@@ -2,8 +2,8 @@ Gluttonous Snake – Gyroscope Controller
 Date: 6 February 2026
 
 Authors:
-Yaru Yang
-Yue Xie
+Yaru Yang/
+Yue Xie/
 Siyu Xu
 
 ⸻
